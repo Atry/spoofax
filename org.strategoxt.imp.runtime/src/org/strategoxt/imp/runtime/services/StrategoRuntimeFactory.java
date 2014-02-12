@@ -110,7 +110,8 @@ public class StrategoRuntimeFactory {
 	}
 
 	private HybridInterpreter createPrototype(Descriptor descriptor) {
-		final HybridInterpreter runtime = createInterpreter(descriptor, true);
+		final HybridInterpreter runtime = statelessCreateInterpreter(
+				descriptor.getTermFactory(true, true), true);
 		runtime.init();
 
 		Debug.startTimer();
@@ -223,11 +224,11 @@ public class StrategoRuntimeFactory {
 		}
 	}
 
-	private HybridInterpreter createInterpreter(Descriptor descriptor,
-			boolean globalInterpreterLock) {
-		HybridInterpreter result = null;
-		ITermFactory termFactory = descriptor.getTermFactory(true, false);
+	public HybridInterpreter statelessCreateInterpreter(
+			ITermFactory termFactory, boolean globalInterpreterLock) {
+
 		assert termFactory != null;
+		HybridInterpreter result = null;
 		if (DEBUG_INTERPRETER_ENABLED) {
 			result = !globalInterpreterLock ? new DebuggableHybridInterpreter(
 					termFactory) : new LockableDebuggableHybridInterpreter(

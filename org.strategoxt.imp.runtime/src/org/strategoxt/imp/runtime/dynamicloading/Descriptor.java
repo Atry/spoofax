@@ -10,7 +10,10 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -33,7 +36,11 @@ import org.spoofax.interpreter.terms.IStrategoList;
 import org.spoofax.interpreter.terms.ITermFactory;
 import org.spoofax.jsglr.client.imploder.ImploderOriginTermFactory;
 import org.spoofax.terms.Term;
-import org.spoofax.terms.TermFactory;
+import org.spoofax.terms.typesmart.TypesmartLibrary;
+import org.spoofax.terms.typesmart.TypesmartTermFactory;
+import org.strategoxt.HybridInterpreter;
+import org.strategoxt.IncompatibleJarException;
+import org.strategoxt.NoInteropRegistererJarException;
 import org.strategoxt.imp.runtime.Environment;
 import org.strategoxt.imp.runtime.RuntimeActivator;
 import org.strategoxt.imp.runtime.parser.SGLRParseController;
@@ -41,6 +48,7 @@ import org.strategoxt.imp.runtime.services.MetaFileLanguageValidator;
 import org.strategoxt.imp.runtime.services.StrategoRuntimeFactory;
 import org.strategoxt.imp.runtime.services.menus.MenuFactory;
 import org.strategoxt.imp.runtime.services.views.outline.OutlineServiceFactory;
+import org.strategoxt.imp.runtime.stratego.IMPLibrary;
 import org.strategoxt.lang.WeakValueHashMap;
 
 /**
@@ -192,18 +200,41 @@ public class Descriptor {
 	}
 
 	public ITermFactory getTermFactory(boolean origintracking, boolean safe) {
-		ITermFactory baseFactory = origintracking ? new ImploderOriginTermFactory(
-				StrategoRuntimeFactory.BASE_TERM_FACTORY)
-				: StrategoRuntimeFactory.BASE_TERM_FACTORY;
-		if (!safe || !isTypesmart()) {
-			return baseFactory;
+		ITermFactory baseFactory = StrategoRuntimeFactory.BASE_TERM_FACTORY;
+		if (safe && isTypesmart()) {
+			HybridInterpreter runtime = StrategoRuntimeFactory.instance()
+					.statelessCreateInterpreter(baseFactory, false);
+			runtime.addOperatorRegistry(new TypesmartLibrary());
+			URL typesmartlibrary;
+			try {
+				typesmartlibrary = new File(getBasePath().append(
+						getAttachedFiles().iterator().next().getParentFile()
+								.getPath()).toFile(), "typesmart-library.jar")
+						.toURI().toURL();
+				runtime.loadJars(getClass().getClassLoader(), typesmartlibrary);
+				baseFactory = new TypesmartTermFactory(runtime, baseFactory);
+			} catch (SecurityException | IncompatibleJarException | IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 
-		// TODO return the typesmart factory
-		return null;
+		baseFactory = origintracking ? new ImploderOriginTermFactory(
+				baseFactory) : baseFactory;
+
+		return baseFactory;
 	}
 
 	public boolean isTypesmart() {
+		Set<File> attachedFiles = getAttachedFiles();
+		for (File file : attachedFiles) {
+			if (!file.isAbsolute())
+				file = getBasePath().append(file.getPath()).toFile();
+			if (new File(file.getParentFile(), "typesmart-library.jar")
+					.exists()) {
+				return true;
+			}
+		}
 		return false;
 	}
 
