@@ -51,6 +51,8 @@ public class StrategoRuntimeFactory {
 	 */
 	public static final boolean DEBUG_INTERPRETER_ENABLED = true;
 
+	public static final boolean PROTOTYPES_ALLOWED = false;
+	
 	/**
 	 * The base of all term factories. This is shared between languages
 	 */
@@ -89,7 +91,7 @@ public class StrategoRuntimeFactory {
 	public HybridInterpreter getInterpreter(Descriptor descriptor,
 			boolean allowPrototype) {
 
-		if (allowPrototype) {
+		if (allowPrototype && PROTOTYPES_ALLOWED) {
 			HybridInterpreter prototype = prototypes.get(descriptor);
 			if (prototype == null) {
 				prototype = createPrototype(descriptor);
@@ -111,7 +113,7 @@ public class StrategoRuntimeFactory {
 
 	private HybridInterpreter createPrototype(Descriptor descriptor) {
 		final HybridInterpreter runtime = statelessCreateInterpreter(
-				descriptor.getTermFactory(true, true), true);
+				descriptor.getTermFactory(true, false), true);
 		runtime.init();
 
 		Debug.startTimer();
@@ -156,6 +158,8 @@ public class StrategoRuntimeFactory {
 		loadCTrees(runtime, descriptor, ctrees);
 		loadJars(runtime, descriptor, jars);
 
+		runtime.getContext().setFactory(descriptor.getTermFactory(true, true));
+		
 		Debug.stopTimer("Loaded analysis components");
 
 		return runtime;
