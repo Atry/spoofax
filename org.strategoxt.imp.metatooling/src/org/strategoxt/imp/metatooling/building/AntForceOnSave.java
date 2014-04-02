@@ -12,9 +12,15 @@ import org.strategoxt.imp.runtime.services.OnSaveService;
 
 public class AntForceOnSave {
     public static void main(String[] args) {
-    	for(String arg : args) {
+    	final String[] files = args[0].split(";;;");
+    	for(String file : files) {
 			try {
-				FileState fileState = FileState.getFile(new Path(arg), null);
+				System.out.println("Calling on-save handler for: " + file);
+				FileState fileState = FileState.getFile(new Path(file), null);
+				if(fileState == null) {
+					Environment.logException("Could not call on-save handler. File state could not be retrieved.");
+					continue;
+				}
 	    		IStrategoTerm ast = fileState.getAnalyzedAst();
 	    		OnSaveService onSave = fileState.getDescriptor().createService(OnSaveService.class, fileState.getParseController());
 	    		onSave.invokeOnSave(ast);

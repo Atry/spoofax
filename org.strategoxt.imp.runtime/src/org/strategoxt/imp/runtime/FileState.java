@@ -7,7 +7,6 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Path;
-import org.eclipse.imp.editor.UniversalEditor;
 import org.eclipse.imp.language.Language;
 import org.eclipse.imp.language.LanguageRegistry;
 import org.eclipse.imp.model.ISourceProject;
@@ -61,8 +60,9 @@ public class FileState {
 	 */
 	public static FileState getFile(IPath path, IDocument document)
 			throws FileNotFoundException, BadDescriptorException, ModelException {
-		
 		Language language = LanguageRegistry.findLanguage(path, document);
+		if(language == null)
+			return null;
 		Descriptor descriptor = Environment.getDescriptor(language);
 		IResource resource = EditorIOAgent.getResource(path.toFile());
 		if (descriptor == null) return null;

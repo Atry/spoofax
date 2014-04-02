@@ -12,7 +12,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,7 +39,6 @@ import org.spoofax.terms.typesmart.TypesmartLibrary;
 import org.spoofax.terms.typesmart.TypesmartTermFactory;
 import org.strategoxt.HybridInterpreter;
 import org.strategoxt.IncompatibleJarException;
-import org.strategoxt.NoInteropRegistererJarException;
 import org.strategoxt.imp.runtime.Environment;
 import org.strategoxt.imp.runtime.RuntimeActivator;
 import org.strategoxt.imp.runtime.parser.SGLRParseController;
@@ -48,7 +46,7 @@ import org.strategoxt.imp.runtime.services.MetaFileLanguageValidator;
 import org.strategoxt.imp.runtime.services.StrategoRuntimeFactory;
 import org.strategoxt.imp.runtime.services.menus.MenuFactory;
 import org.strategoxt.imp.runtime.services.views.outline.OutlineServiceFactory;
-import org.strategoxt.imp.runtime.stratego.IMPLibrary;
+import org.strategoxt.imp.runtime.services.views.properties.PropertiesServiceFactory;
 import org.strategoxt.lang.WeakValueHashMap;
 
 /**
@@ -135,6 +133,7 @@ public class Descriptor {
 		serviceFactories.add(new OnSaveServiceFactory());
 		serviceFactories.add(new RefactoringFactory());
 		serviceFactories.add(new OutlineServiceFactory());
+		serviceFactories.add(new PropertiesServiceFactory());
 	}
 
 	/**
