@@ -61,6 +61,10 @@ strategies
     
         <!-- Main target -->
         <target name="all" depends="spoofaximp.default.ctree"/>
+        <!-- <target name="all" depends="spoofaximp.default.jar"/> -->
+        <!-- <target name="all" depends="spoofaximp.typesmart.ctree"/> -->
+        <!-- <target name="all" depends="spoofaximp.typesmart.jar"/> -->
+        
     </project>
     ]
   
@@ -107,6 +111,40 @@ $[<?xml version="1.0" encoding="UTF-8"?>
 			      stratego.jar.helper,
 			      refresh,
 			      sdf2imp.eclipse.load" />
+    <target name="spoofaximp.typesmart.ctree" depends="
+            check-classpath,
+            call-onsave,
+            init,
+            sdf2table,
+            meta-sdf2table,
+            ppgen,
+            pppack,
+            sdf2imp.eclipse,
+            sdf2imp.standalone,
+            sdf2parenthesize,
+            stratego.aster,
+            java.jar,
+            typesmart-build,
+            stratego.ctree,
+            refresh,
+            sdf2imp.eclipse.load" />
+    <target name="spoofaximp.typesmart.jar" depends="
+            check-classpath,
+            call-onsave,
+            init,
+            sdf2table,
+            meta-sdf2table,
+            ppgen,
+            pppack,
+            sdf2imp.eclipse,
+            sdf2imp.standalone,
+            sdf2parenthesize,
+            stratego.aster,
+            java.jar,
+            typesmart-build,
+            stratego.jar.helper,
+            refresh,
+            sdf2imp.eclipse.load" />
 	<target name="spoofaximp.default.nostr" depends="
 			      check-classpath,
 			      call-onsave,
@@ -122,6 +160,10 @@ $[<?xml version="1.0" encoding="UTF-8"?>
 			      java.jar,
 			      refresh,
 			      sdf2imp.eclipse.load" />
+
+  <property name="typesmart.gen.dir" location="typesmart-gen" />
+	<property name="typesmart.bin.dir" location="typesmart-bin" />
+	<property name="typesmart.class.dir" location="typesmart-class" />
 
 	<!-- Initialization -->
 	<available file="${src-gen}/[pkgdir]/strategies/Main.java" property="java.jar.enabled" />
@@ -551,6 +593,54 @@ $[<?xml version="1.0" encoding="UTF-8"?>
 			<param name="build.stratego.extraargs" value="-F" />
 		</antcall>
 	</target>
+
+  <target name="typesmart-build">
+    <mkdir dir="${typesmart.gen.dir}/gen" />
+    <java classname="org.spoofax.terms.typesmart.generator.GenerateTypesmartConstructors" failonerror="true">
+      <classpath>
+        <pathelement path="${java.jar.classpath}:${eclipse.spoofaximp.strategojar}:${eclipse.spoofaximp.typesmartgenerator}/typesmart-generator.jar" />
+      </classpath>
+      <arg value="-i" />
+      <arg value="${include}/${sdfmodule}.def" />
+      <arg value="-m" />
+      <arg value="${sdfmodule}" />
+      <arg value="-o" />
+      <arg value="${typesmart.gen.dir}/gen/${sdfmodule}.str" />
+    </java>
+    <copy file="${eclipse.spoofaximp.typesmartgenerator}/Common.str" todir="${typesmart.gen.dir}" failonerror="true" />
+    <copy file="${eclipse.spoofaximp.typesmartgenerator}/Runtime.str" todir="${typesmart.gen.dir}" failonerror="true" />
+    <copy file="${eclipse.spoofaximp.typesmartgenerator}/typesmart.str" todir="${typesmart.gen.dir}" failonerror="true" />
+    <mkdir dir="${typesmart.bin.dir}" />
+    <mkdir dir="${typesmart.bin.dir}/typesmart" />
+    <java classname="org.strategoxt.strj.Main" failonerror="true">
+      <arg value="-i" />
+      <arg value="${typesmart.gen.dir}/typesmart.str" />
+      <arg value="-o" />
+      <arg value="${typesmart.bin.dir}/typesmart/typesmart.java" />
+      <arg value="-p" />
+      <arg value="typesmart" />
+      <arg value="--library" />
+      <arg value="--clean" />
+      <arg value="-I" />
+      <arg value="${typesmart.gen.dir}" />
+      <arg value="-la" />
+      <arg value="strc" />
+      <arg value="-la" />
+      <arg value="stratego-lib" />
+    </java>
+    <mkdir dir="${typesmart.class.dir}" />
+    <javac destdir="${typesmart.class.dir}" source="1.7" target="1.7" debug="true" debuglevel="lines,vars,source">
+      <src path="${typesmart.bin.dir}" />
+      <classpath>
+        <pathelement path="${java.jar.classpath}:${eclipse.spoofaximp.strategojar}" />
+        <fileset dir="${eclipse.home}/plugins">
+          <include name="*.jar" />
+        </fileset>
+        <!-- Spoofax/322 -->
+      </classpath>
+    </javac>
+    <jar basedir="${typesmart.class.dir}" includes="typesmart/**" destfile="${include}/typesmart-library.jar" />
+  </target>
 
 	<!-- Stratego to Java compiler -->
 	<target name="stratego.jar" depends="rtg2sig,utils-files">
