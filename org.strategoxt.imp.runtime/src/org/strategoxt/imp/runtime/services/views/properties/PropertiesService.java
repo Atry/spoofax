@@ -68,7 +68,14 @@ public class PropertiesService implements IPropertiesService {
 			// trying to obtain an AST selection in the old AST using the new selection offset and selection length may fail.
 			return emptyList;
 		}
-		selectionAst = InputTermBuilder.getMatchingAncestor(selectionAst, false);
+
+		observer.getLock().lock();
+		try {
+			selectionAst = InputTermBuilder.getMatchingAncestor(selectionAst, false);
+		}
+		finally {
+			observer.getLock().unlock();
+		}
 		IStrategoTerm ast = null;
 		if (source) {
 			ast = editorState.getCurrentAst();
@@ -85,8 +92,14 @@ public class PropertiesService implements IPropertiesService {
 		}
 		
 		IStrategoTerm properties = null;
-		IStrategoTerm input = new InputTermBuilder(observer, ast).makeInputTerm(selectionAst, true, source);
-		properties = observer.invokeSilent(propertiesRule, input, editorState.getResource().getFullPath().toFile());
+		observer.getLock().lock();
+		try {
+			IStrategoTerm input = new InputTermBuilder(observer.getRuntime(), ast).makeInputTerm(selectionAst, true, source);
+			properties = observer.invokeSilent(propertiesRule, input, editorState.getResource().getFullPath().toFile());
+		}
+		finally {
+			observer.getLock().unlock();
+		}
 		if (properties == null) {
 			observer.reportRewritingFailed();
 		}
