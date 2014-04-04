@@ -213,8 +213,8 @@ public class Descriptor {
 				runtime.loadJars(getClass().getClassLoader(), typesmartlibrary);
 				baseFactory = new TypesmartTermFactory(runtime, baseFactory);
 			} catch (SecurityException | IncompatibleJarException | IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				Environment.logException("Could not create TypeSmartTermFactory", e);
+				return baseFactory;
 			}
 		}
 
