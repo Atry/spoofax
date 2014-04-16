@@ -215,7 +215,7 @@ public class Descriptor {
 				runtime.loadJars(getClass().getClassLoader(), typesmartlibrary);
 				baseFactory = new TypesmartTermFactory(runtime, baseFactory, new TypesmartLogger() {
 					@Override public void log(String msg) { 
-						Environment.logWarning(msg);
+						Environment.logException(msg);
 						try {
 							StrategoConsole.getOutputWriter().append(msg);
 						} catch (IOException e) {
