@@ -36,6 +36,7 @@ import org.spoofax.interpreter.terms.ITermFactory;
 import org.spoofax.jsglr.client.imploder.ImploderOriginTermFactory;
 import org.spoofax.terms.Term;
 import org.spoofax.terms.typesmart.TypesmartLibrary;
+import org.spoofax.terms.typesmart.TypesmartLogger;
 import org.spoofax.terms.typesmart.TypesmartTermFactory;
 import org.strategoxt.HybridInterpreter;
 import org.strategoxt.IncompatibleJarException;
@@ -47,6 +48,7 @@ import org.strategoxt.imp.runtime.services.StrategoRuntimeFactory;
 import org.strategoxt.imp.runtime.services.menus.MenuFactory;
 import org.strategoxt.imp.runtime.services.views.outline.OutlineServiceFactory;
 import org.strategoxt.imp.runtime.services.views.properties.PropertiesServiceFactory;
+import org.strategoxt.imp.runtime.stratego.StrategoConsole;
 import org.strategoxt.lang.WeakValueHashMap;
 
 /**
@@ -211,7 +213,15 @@ public class Descriptor {
 								.getPath()).toFile(), "typesmart-library.jar")
 						.toURI().toURL();
 				runtime.loadJars(getClass().getClassLoader(), typesmartlibrary);
-				baseFactory = new TypesmartTermFactory(runtime, baseFactory);
+				baseFactory = new TypesmartTermFactory(runtime, baseFactory, new TypesmartLogger() {
+					@Override public void log(String msg) { 
+						Environment.logWarning(msg);
+						try {
+							StrategoConsole.getOutputWriter().append(msg);
+						} catch (IOException e) {
+						}
+					}
+				});
 			} catch (SecurityException | IncompatibleJarException | IOException e) {
 				Environment.logException("Could not create TypeSmartTermFactory", e);
 				return baseFactory;
