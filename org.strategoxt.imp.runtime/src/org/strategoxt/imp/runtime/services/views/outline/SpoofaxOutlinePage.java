@@ -3,9 +3,13 @@ package org.strategoxt.imp.runtime.services.views.outline;
 import java.util.LinkedList;
 
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.imp.parser.IModelListener;
 import org.eclipse.imp.parser.IParseController;
 import org.eclipse.jface.action.IToolBarManager;
+import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.jface.viewers.TreePath;
 import org.eclipse.jface.viewers.TreeSelection;
@@ -29,31 +33,33 @@ import org.strategoxt.imp.runtime.stratego.StrategoTermPath;
  */
 public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelListener {
 
-	private final IParseController parseController;
-	private boolean debounceSelectionChanged;
+	private final EditorState editorState;
+	private boolean debounceOutlineSelection;
+	private boolean debounceTextSelection;
 	private IStrategoTerm outline;
 
-	public SpoofaxOutlinePage(IParseController parseController) {
-		this.parseController = parseController;
+	public SpoofaxOutlinePage(EditorState editorState) {
+		this.editorState = editorState;
 	}
 	
 	@Override
 	public void createControl(Composite parent) {
 		super.createControl(parent);
 		getTreeViewer().setContentProvider(new StrategoTreeContentProvider());
-		String pluginPath = EditorState.getEditorFor(parseController).getDescriptor().getBasePath().toOSString();
+		String pluginPath = editorState.getDescriptor().getBasePath().toOSString();
 		getTreeViewer().setLabelProvider(new StrategoLabelProvider(pluginPath));
 		
 		registerToolbarActions();
 		
-		EditorState editorState = EditorState.getEditorFor(parseController);
 		editorState.getEditor().addModelListener(this);
 		editorState.getEditor().getSelectionProvider().addSelectionChangedListener(this);
 		
-		if (parseController.getCurrentAst() != null) {
+		if (editorState.getParseController().getCurrentAst() != null) {
 			// The editor sporadically manages to parse the file before our model listener gets added,
 			// resulting in an empty outline on startup. We therefore perform a 'manual' update:
-			update();
+			if (!getOnselection()) {
+				update();
+			}
 		}
 	}
 
@@ -70,7 +76,16 @@ public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelList
 	}
 
 	public void update(IParseController arg0, IProgressMonitor arg1) {
-		update();
+		Display.getDefault().asyncExec(new Runnable() {
+
+			@Override
+			public void run() {
+				if (!getOnselection()) {
+					update();
+				}
+			}
+		});
+		
 	}
 	
 	public AnalysisRequired getAnalysisRequired() {
@@ -79,37 +94,41 @@ public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelList
 		
 	@Override
 	public void dispose() {
-		EditorState.getEditorFor(parseController).getEditor().removeModelListener(this);
+		editorState.getEditor().removeModelListener(this);
+		editorState.getEditor().getSelectionProvider().addSelectionChangedListener(this);
 	}
 	
 	public void update() {
-		EditorState editorState = new EditorState(EditorState.getEditorFor(parseController).getEditor()); // create new editorState to reload descriptor
-		IOutlineService outlineService = null;
-		try {
-			outlineService = editorState.getDescriptor().createService(IOutlineService.class, editorState.getParseController());
-		} catch (BadDescriptorException e) {
-			e.printStackTrace();
-		}
-		
-		outline = outlineService.getOutline();
-		final int outline_expand_to_level = outlineService.getExpandToLevel();
-		
-		if (outline == null) {
-			outline = SpoofaxOutlineUtil.factory.makeList();
-		}
-		// workaround for https://bugs.eclipse.org/9262
-		if (outline.getTermType() == IStrategoTerm.APPL) {
-			outline = SpoofaxOutlineUtil.factory.makeList(outline);
-		}
-		
-		Display.getDefault().asyncExec(new Runnable() {
-			public void run() {
-				if (getTreeViewer().getControl() != null && !getTreeViewer().getControl().isDisposed()) {
-					getTreeViewer().setInput(outline);
-					getTreeViewer().expandToLevel(outline_expand_to_level);
+		final Display display = Display.getCurrent();
+
+		Job job = new Job("Updating outline view") {
+			@Override
+			protected IStatus run(IProgressMonitor monitor) {		
+
+				outline = getOutline();
+				
+				if (outline == null) {
+					outline = SpoofaxOutlineUtil.factory.makeList();
 				}
+				// workaround for https://bugs.eclipse.org/9262
+				if (outline.getTermType() == IStrategoTerm.APPL) {
+					outline = SpoofaxOutlineUtil.factory.makeList(outline);
+				}
+				
+				display.asyncExec(new Runnable() {
+					@Override
+					public void run() {
+						if (getTreeViewer().getControl() != null && !getTreeViewer().getControl().isDisposed()) {
+							getTreeViewer().setInput(outline);
+							getTreeViewer().expandToLevel(getExpandToLevel());
+						}
+					}
+				});
+				return Status.OK_STATUS;
 			}
-		});
+		};
+
+		job.schedule();
 	}
 
 	@Override
@@ -118,18 +137,40 @@ public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelList
         	super.selectionChanged(event);
     	}
     	    	
-    	if (debounceSelectionChanged) {
-    		return;
-    	}
-    	
-    	debounceSelectionChanged = true;
     	if (event.getSource() == getTreeViewer()) {
+        	if (debounceOutlineSelection) {
+        		return;
+        	}
+        	debounceTextSelection = true;
+    		
         	outlineSelectionToTextSelection();
+        	new Thread(new Runnable() {
+    			
+    			@Override
+    			public void run() {
+    				try {
+    					// this is rather ugly but the problem is that new text selections are generated asynchronously and we don't know how many
+    					Thread.sleep(2000);
+    				} catch (InterruptedException e) {
+    					e.printStackTrace();
+    				}
+    				debounceTextSelection = false;
+    			}
+    		}).start();
        	}
        	else {
-       		textSelectionToOutlineSelection();
+        	if (debounceTextSelection || debounceOutlineSelection) {
+        		return;
+        	}
+
+        	if (getOnselection()) {
+        		update();
+        	}
+        	else {
+            	debounceOutlineSelection = true;
+        		textSelectionToOutlineSelection();
+        	}
        	}
-    	debounceSelectionChanged = false;
     }
     
     public void outlineSelectionToTextSelection() {
@@ -139,39 +180,54 @@ public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelList
     	}
 
     	Object[] selectedElems = treeSelection.toArray();
-    	SpoofaxOutlineUtil.selectCorrespondingText(selectedElems, parseController);
+    	SpoofaxOutlineUtil.selectCorrespondingText(selectedElems, editorState);
     }
     
     public void textSelectionToOutlineSelection() {
     	if (outline == null) {
+    		debounceOutlineSelection = false;
     		return;
     	}
     	
-    	EditorState editorState = EditorState.getEditorFor(parseController);
-    	IStrategoTerm textSelection = editorState.getSelectionAst(true);
-    	
-    	if (textSelection != null) {
-	    	IStrategoList path = null;
-	    	
-	    	StrategoObserver observer = SpoofaxOutlineUtil.getObserver(editorState);
-	    	observer.getLock().lock();
-	    	try {
-	    		// TODO: use InputTermBuilder instead!
-		    	path = StrategoTermPath.getTermPathWithOrigin(observer.getRuntime().getCompiledContext(), (IStrategoTerm) outline, textSelection);
-	    	}
-	    	finally {
-	    		observer.getLock().unlock();
-	    	}
-	    	
-	    	if (path != null) {
-		    	TreePath[] treePaths = termPathToTreePaths(path);
-				TreeSelection selection = new TreeSelection(treePaths);
-				setSelection(selection);
-				return;
-	    	}
-    	}
-    	
-    	setSelection(new TreeSelection(new TreePath[0]));
+    	final IStrategoTerm textSelection = editorState.getSelectionAst(false);
+		final Display display = Display.getCurrent();
+
+		Job job = new Job("Updating outline view selection") {
+			@Override
+			protected IStatus run(IProgressMonitor monitor) {
+				ISelection newSelection = new TreeSelection(new TreePath[0]);
+				
+		    	if (textSelection != null) {
+			    	IStrategoList path = null;
+			    	
+			    	StrategoObserver observer = SpoofaxOutlineUtil.getObserver(editorState);
+			    	observer.getLock().lock();
+			    	try {
+				    	path = StrategoTermPath.getTermPathWithOrigin(observer.getRuntime().getCompiledContext(), (IStrategoTerm) outline, textSelection);
+			    	}
+			    	finally {
+			    		observer.getLock().unlock();
+			    	}
+			    	
+			    	if (path != null) {
+				    	TreePath[] treePaths = termPathToTreePaths(path);
+				    	newSelection = new TreeSelection(treePaths);
+			    	}
+		    	}
+				
+		    	final ISelection result = newSelection;
+				display.asyncExec(new Runnable() {
+					@Override
+					public void run() {
+						setSelection(result);
+						debounceOutlineSelection = false;
+					}
+				});
+				return Status.OK_STATUS;
+			}
+		};
+
+		job.schedule();
     }
     
     private TreePath[] termPathToTreePaths(IStrategoList path) {
@@ -213,4 +269,31 @@ public class SpoofaxOutlinePage extends ContentOutlinePage implements IModelList
     	super.setFocus();
     	outlineSelectionToTextSelection();
     }
+	
+	private boolean getOnselection() {
+		EditorState editorState = new EditorState(this.editorState.getEditor()); // create new editorState to reload descriptor
+		IOutlineService outlineService = getOutlineService(editorState);
+		return outlineService != null && outlineService.getOnselection();
+	}
+	
+	private int getExpandToLevel() {
+		EditorState editorState = new EditorState(this.editorState.getEditor()); // create new editorState to reload descriptor
+		IOutlineService outlineService = getOutlineService(editorState);
+		return outlineService == null ? 0 : outlineService.getExpandToLevel();
+	}
+	
+	private IStrategoTerm getOutline() {
+		EditorState editorState = new EditorState(this.editorState.getEditor()); // create new editorState to reload descriptor
+		IOutlineService outlineService = getOutlineService(editorState);
+		return outlineService == null ? null : outlineService.getOutline(editorState);
+	}
+	
+	private IOutlineService getOutlineService(EditorState editorState) {
+		try {
+			return editorState.getDescriptor().createService(IOutlineService.class, editorState.getParseController());
+		} catch (BadDescriptorException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
 }

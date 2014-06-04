@@ -1,6 +1,8 @@
 package org.strategoxt.imp.runtime.editor;
 
+import java.util.List;
 import java.util.ResourceBundle;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -8,9 +10,13 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.imp.editor.UniversalEditor;
 import org.eclipse.jface.action.Action;
+import org.eclipse.jface.text.ISelectionValidator;
 import org.eclipse.jface.text.ITextSelection;
+import org.eclipse.jface.text.TextSelection;
 import org.eclipse.jface.text.source.ISourceViewer;
 import org.eclipse.jface.text.source.IVerticalRuler;
+import org.eclipse.jface.viewers.IPostSelectionProvider;
+import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.ISelectionChangedListener;
 import org.eclipse.jface.viewers.ISelectionProvider;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
@@ -20,6 +26,8 @@ import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.editors.text.TextEditor;
 import org.eclipse.ui.texteditor.TextOperationAction;
 import org.eclipse.ui.views.contentoutline.IContentOutlinePage;
@@ -36,6 +44,10 @@ import org.strategoxt.imp.runtime.services.views.properties.PropertiesService;
 public class SpoofaxEditor extends UniversalEditor {
 	
 	public static final String EDITOR_ID = "org.eclipse.imp.runtime.editor.spoofaxEditor";
+	private EditorState editorState;
+	
+	private SpoofaxViewer spoofaxViewer;
+	private SelectionProvider selectionProvider = new SelectionProvider();
 	
 	public SpoofaxEditor() {
 		setSourceViewerConfiguration(new SpoofaxSourceViewerConfiguration(new StructuredSourceViewerConfiguration()));
@@ -50,69 +62,107 @@ public class SpoofaxEditor extends UniversalEditor {
 		}
 		
 		if (adapter.equals(IContentOutlinePage.class)) {
-			return new SpoofaxOutlinePage(getParseController());
+			return new SpoofaxOutlinePage(editorState);
 		}
 
 		return super.getAdapter(adapter);
 	}
 	
 	@Override
+	public ISelectionProvider getSelectionProvider() {
+		return selectionProvider;
+	}
+	
+	@Override
 	public void createPartControl(Composite parent) {
 		super.createPartControl(parent);
-
+		editorState = EditorState.getEditorFor(this);
 		
-		// temporary workaround for Spoofax/812
-		EditorState editorState = EditorState.getEditorFor(this);
-		if (editorState != null) {
-			try {
-				PropertiesService propertiesService = editorState.getDescriptor().createService(PropertiesService.class, editorState.getParseController());
-				if (propertiesService.getPropertiesRule() == null) {
-					return;
-				}
-			} catch (BadDescriptorException e) {
-				e.printStackTrace();
-			}
-		}
-		
-		final ISelectionProvider textSelectionProvider = getSite().getSelectionProvider();
-		getSite().setSelectionProvider(new org.strategoxt.imp.runtime.editor.SelectionProvider());
-		
-		textSelectionProvider.addSelectionChangedListener(new ISelectionChangedListener() {
+		spoofaxViewer.getSelectionProvider().addSelectionChangedListener(new ISelectionChangedListener() {
 
 			@Override
 			public void selectionChanged(SelectionChangedEvent event) {
 				ITextSelection textSelection = (ITextSelection) event.getSelection();
-				updateSelection(textSelection.getOffset(), textSelection.getLength()); // generate new StrategoTermSelection when TextSelection changes
+				updateSelection(textSelection.getOffset(), textSelection.getLength()); // generate new selection upon new TextSelection
 			}
 		});
-
+		
 		((StyledText) this.getAdapter(Control.class)).addCaretListener(new CaretListener() {
 
 			@Override
 			public void caretMoved(CaretEvent event) {
-				ITextSelection textSelection = (ITextSelection) textSelectionProvider.getSelection();
+				ITextSelection textSelection = (ITextSelection) spoofaxViewer.getSelectionProvider().getSelection();
 				int offset = textSelection.getLength() == 0 ? event.caretOffset : textSelection.getOffset();
-				updateSelection(offset, textSelection.getLength()); // generate new StrategoTermSelection when cursor position changes (because TextSelection doesn't change when selection stays empty).
+				updateSelection(offset, textSelection.getLength()); // generate new selection when cursor position changes (non-default behavior for Eclipse Text Editors)
 			}
 		});
 	}
 	
+	private boolean shouldCreatePropertiesView;
+	private boolean shouldCreatePropertiesView() {
+		if (editorState == null) {
+			return false;
+		}
+			
+		Display.getDefault().syncExec(new Runnable() {
+		    @Override
+		    public void run() {
+				IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+				if (window == null || window.getActivePage() == null || window.getActivePage().findView("org.eclipse.ui.views.PropertySheet") == null) {
+					shouldCreatePropertiesView = false;
+				}
+				else {
+					shouldCreatePropertiesView = true;
+				}
+		    }
+		});
+		if (shouldCreatePropertiesView == false) {
+			return false;
+		}
+		
+		try {
+			editorState = new EditorState(this.editorState.getEditor()); // create new editorState to reload descriptor
+			PropertiesService propertiesService = editorState.getDescriptor().createService(PropertiesService.class, editorState.getParseController());
+			if (propertiesService.getPropertiesRule() == null) {
+				return false;
+			}
+		} catch (BadDescriptorException e) {
+			e.printStackTrace();
+		}
+		
+		return true;
+	}
+	
 	public void updateSelection(final int offset, final int length) {
-		final SpoofaxEditor spoofaxEditor = this;
-		final ISelectionProvider strategoTermSelectionProvider = getSite().getSelectionProvider();
+		
+		if (editorState == null) {
+			return; // language undefined
+		}
+		
 		final Display display = Display.getCurrent();
 
 		Job job = new Job("Updating properties view") {
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
-				final StrategoTermSelection selection = new StrategoTermSelection(spoofaxEditor, offset, length);
-				selection.getFirstElement(); // do the heavy work here and not in the UI thread, or the UI will block
-				display.asyncExec(new Runnable() {
-					@Override
-					public void run() {
-						strategoTermSelectionProvider.setSelection(selection);
-					}
-				});
+				if (shouldCreatePropertiesView()) {
+					final StrategoTermSelection selection = new StrategoTermSelection(editorState, offset, length);
+					selection.getFirstElement(); // do the heavy work here and not in the UI thread, or the UI will block
+					display.asyncExec(new Runnable() {
+						@Override
+						public void run() {
+							selectionProvider.setSelectionDontReveal(selection);
+						}
+					});
+				}
+				else {
+					display.asyncExec(new Runnable() {
+						@Override
+						public void run() {
+							selectionProvider.setSelectionDontReveal(new TextSelection(offset, length));
+						}
+					});
+				}
+				
 				return Status.OK_STATUS;
 			}
 		};
@@ -141,12 +191,65 @@ public class SpoofaxEditor extends UniversalEditor {
 	
 	@Override
 	protected ISourceViewer createSourceViewer(Composite parent, IVerticalRuler ruler, int styles) {
-		if (getParseController() == null) {
-			return super.createSourceViewer(parent, ruler, styles);
+		spoofaxViewer = new SpoofaxViewer(parent, ruler, getOverviewRuler(), isOverviewRulerVisible(), styles, getParseController());
+		getSourceViewerDecorationSupport(spoofaxViewer); // ensure decoration support has been created and configured.
+		return spoofaxViewer;
+	}
+	
+	protected class SelectionProvider implements IPostSelectionProvider, ISelectionValidator {
+		List<ISelectionChangedListener> listeners = new CopyOnWriteArrayList<ISelectionChangedListener>();
+		
+		public void addSelectionChangedListener(ISelectionChangedListener listener) {
+			listeners.add(listener);
+		}
+
+		public ISelection getSelection() {
+			return spoofaxViewer.getSelectionProvider().getSelection(); // always return synchronized selection and not the asynchronous StrategoTermSelection
+		}
+
+		public void removeSelectionChangedListener(ISelectionChangedListener listener) {
+			listeners.remove(listener);
+		}
+
+		public void setSelection(ISelection selection) {
+				doSetSelection(selection);
 		}
 		
-		ISourceViewer viewer = new SpoofaxViewer(parent, ruler, getOverviewRuler(), isOverviewRulerVisible(), styles, getParseController());
-		getSourceViewerDecorationSupport(viewer); // ensure decoration support has been created and configured.
-		return viewer;
+		private void setSelectionDontReveal(ISelection selection) {
+			SelectionChangedEvent e = new SelectionChangedEvent(this, selection);
+			for (ISelectionChangedListener listener : listeners) {
+				listener.selectionChanged(e);
+			}
+			
+			if (selection instanceof StrategoTermSelection) {
+				spoofaxViewer.firePostSelectionChanged(selection);
+			}
+			else if (selection instanceof ITextSelection){
+				ITextSelection textSelection = (ITextSelection) selection;
+			 	spoofaxViewer.firePostSelectionChanged(textSelection.getStartLine(), textSelection.getEndLine());
+			}
+		}
+		
+		public void addPostSelectionChangedListener(ISelectionChangedListener listener) {
+			if (spoofaxViewer != null) {
+				if (spoofaxViewer.getSelectionProvider() instanceof IPostSelectionProvider)  {
+					IPostSelectionProvider provider= (IPostSelectionProvider) spoofaxViewer.getSelectionProvider();
+					provider.addPostSelectionChangedListener(listener);
+				}
+			}
+		}
+
+		public void removePostSelectionChangedListener(ISelectionChangedListener listener) {
+			if (spoofaxViewer != null)  {
+				if (spoofaxViewer.getSelectionProvider() instanceof IPostSelectionProvider)  {
+					IPostSelectionProvider provider= (IPostSelectionProvider) spoofaxViewer.getSelectionProvider();
+					provider.removePostSelectionChangedListener(listener);
+				}
+			}
+		}
+
+		public boolean isValid(ISelection postSelection) {
+			return true;
+		}
 	}
 }

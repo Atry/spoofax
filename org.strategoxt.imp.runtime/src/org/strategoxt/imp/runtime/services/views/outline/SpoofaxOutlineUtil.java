@@ -1,6 +1,5 @@
 package org.strategoxt.imp.runtime.services.views.outline;
 
-import org.eclipse.imp.parser.IParseController;
 import org.eclipse.jface.text.TextSelection;
 import org.eclipse.jface.viewers.ISelectionProvider;
 import org.spoofax.interpreter.terms.IStrategoAppl;
@@ -50,11 +49,11 @@ public class SpoofaxOutlineUtil {
 		}
 	}
 	
-	public static void selectCorrespondingText(Object outlineNode, IParseController parseController) {
-		selectCorrespondingText(new Object[]{outlineNode}, parseController);
+	public static void selectCorrespondingText(Object outlineNode, EditorState editorState) {
+		selectCorrespondingText(new Object[]{outlineNode}, editorState);
 	}
 	
-	public static void selectCorrespondingText(Object[] outlineNodes, IParseController parseController) {
+	public static void selectCorrespondingText(Object[] outlineNodes, EditorState editorState) {
 		int startOffset = Integer.MAX_VALUE;
 		int endOffset = Integer.MIN_VALUE;
 		
@@ -76,7 +75,7 @@ public class SpoofaxOutlineUtil {
     	
     	if (startOffset != Integer.MAX_VALUE && endOffset != Integer.MIN_VALUE) {
     		TextSelection newSelection = new TextSelection(startOffset, endOffset - startOffset);
-    		ISelectionProvider selectionProvider = EditorState.getEditorFor(parseController).getEditor().getSelectionProvider();
+    		ISelectionProvider selectionProvider = editorState.getEditor().getSelectionProvider();
     		selectionProvider.setSelection(newSelection);
     	}
 	}

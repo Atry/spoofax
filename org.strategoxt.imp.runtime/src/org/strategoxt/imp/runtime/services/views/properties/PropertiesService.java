@@ -1,6 +1,7 @@
 package org.strategoxt.imp.runtime.services.views.properties;
 
 import org.eclipse.imp.parser.IParseController;
+import org.eclipse.swt.widgets.Display;
 import org.spoofax.interpreter.terms.IStrategoTerm;
 import org.spoofax.terms.TermFactory;
 import org.strategoxt.imp.runtime.EditorState;
@@ -8,7 +9,6 @@ import org.strategoxt.imp.runtime.Environment;
 import org.strategoxt.imp.runtime.dynamicloading.BadDescriptorException;
 import org.strategoxt.imp.runtime.editor.SelectionUtil;
 import org.strategoxt.imp.runtime.parser.SGLRParseController;
-import org.strategoxt.imp.runtime.services.InputTermBuilder;
 import org.strategoxt.imp.runtime.services.StrategoObserver;
 
 /**
@@ -32,6 +32,7 @@ public class PropertiesService implements IPropertiesService {
 		this.controller = controller;
 	}
 
+	private EditorState editorState;
 	@Override
 	public IStrategoTerm getProperties(int selectionOffset, int selectionLength) {
 		IStrategoTerm emptyList = new TermFactory().makeList();
@@ -39,7 +40,12 @@ public class PropertiesService implements IPropertiesService {
 			return emptyList;
 		}
 
-		EditorState editorState = EditorState.getEditorFor(controller);
+		Display.getDefault().syncExec(new Runnable() {
+			@Override
+			public void run() {
+				editorState = EditorState.getEditorFor(controller);
+			}
+		});
 		StrategoObserver observer = getObserver(editorState);
 		observer.getLock().lock();
 		try {
@@ -69,32 +75,10 @@ public class PropertiesService implements IPropertiesService {
 			return emptyList;
 		}
 
-		observer.getLock().lock();
-		try {
-			selectionAst = InputTermBuilder.getMatchingAncestor(selectionAst, false);
-		}
-		finally {
-			observer.getLock().unlock();
-		}
-		IStrategoTerm ast = null;
-		if (source) {
-			ast = editorState.getCurrentAst();
-		}
-		else {
-			try {
-				ast = editorState.getCurrentAnalyzedAst();
-				if (ast == null) {
-					ast = editorState.getAnalyzedAst(); // TODO Spoofax/839
-				}
-			} catch (BadDescriptorException e) {
-				e.printStackTrace();
-			}
-		}
-		
 		IStrategoTerm properties = null;
 		observer.getLock().lock();
 		try {
-			IStrategoTerm input = new InputTermBuilder(observer.getRuntime(), ast).makeInputTerm(selectionAst, true, source);
+			IStrategoTerm input = observer.getInputBuilder().makeInputTerm(selectionAst, true, source);
 			properties = observer.invokeSilent(propertiesRule, input, editorState.getResource().getFullPath().toFile());
 		}
 		finally {

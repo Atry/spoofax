@@ -1,6 +1,6 @@
 package org.strategoxt.imp.runtime.services.views.outline;
 
-import org.eclipse.imp.parser.IParseController;
+import org.eclipse.swt.widgets.Display;
 import org.spoofax.interpreter.terms.IStrategoTerm;
 import org.spoofax.jsglr.client.imploder.ImploderOriginTermFactory;
 import org.spoofax.terms.TermFactory;
@@ -13,34 +13,24 @@ import org.strategoxt.imp.runtime.services.StrategoObserver;
  */
 public class OutlineService implements IOutlineService {
 	
-	private String outlineRule;
-	
-	private int expandToLevel;
+	private final String outlineRule;
+	private final boolean source;
+	private final boolean onselection;
+	private final int expandToLevel;
+	private IStrategoTerm selectionAst;
 	
 	private ImploderOriginTermFactory factory = new ImploderOriginTermFactory(new TermFactory());
 	
-	private IParseController controller;
 	
-	public OutlineService(String outlineRule, int expandToLevel, IParseController controller) {
+	public OutlineService(String outlineRule, boolean source, boolean onselection, int expandToLevel, EditorState editorState) {
 		this.outlineRule = outlineRule;
+		this.source = true; // TODO
+		this.onselection = onselection;
 		this.expandToLevel = expandToLevel;
-		this.controller = controller;
-	}
-
-
-	@Override
-	public void setOutlineRule(String rule) {
-		this.outlineRule = rule;
 	}
 
 	@Override
-	public void setExpandToLevel(int level) {
-		this.expandToLevel = level;
-	}
-
-	@Override
-	public IStrategoTerm getOutline() {
-		EditorState editorState = EditorState.getEditorFor(controller);
+	public IStrategoTerm getOutline(final EditorState editorState) {
 		StrategoObserver observer = getObserver(editorState);
 		observer.getLock().lock();
 		try {
@@ -48,12 +38,28 @@ public class OutlineService implements IOutlineService {
 				return messageToOutlineNode("Can't find strategy '" + outlineRule + "'");
 			}
 			
+			if (onselection) {
+				Display.getDefault().syncExec(new Runnable() {
+					@Override
+					public void run() {
+						selectionAst = editorState.getSelectionAst(false);
+					}
+				});
+			}
+			
 			if (editorState.getCurrentAst() == null) {
 				return null;
 			}
 			
-			IStrategoTerm outline = observer.invokeSilent(outlineRule, editorState.getCurrentAst(), editorState.getResource().getFullPath().toFile());
-			
+			IStrategoTerm outline = null;
+			observer.getLock().lock();
+			try {
+				IStrategoTerm input = observer.getInputBuilder().makeInputTerm(selectionAst == null ? editorState.getCurrentAst() : selectionAst, true, source);
+				outline = observer.invokeSilent(outlineRule, input, editorState.getResource().getFullPath().toFile());
+			}
+			finally {
+				observer.getLock().unlock();
+			}
 			if (outline == null) {
 				observer.reportRewritingFailed();
 				return messageToOutlineNode("Strategy '" + outlineRule + "' failed");
@@ -77,6 +83,11 @@ public class OutlineService implements IOutlineService {
 	@Override
 	public int getExpandToLevel() {
 		return expandToLevel;
+	}
+	
+	@Override
+	public boolean getOnselection() {
+		return onselection;
 	}
 	
 	public static StrategoObserver getObserver(EditorState editorState) {
